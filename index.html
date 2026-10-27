@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Insertar imagen en muchos PDFs</title>
+<style>
+  :root { --bg:#f6f7fb; --card:#fff; --txt:#1c2030; --mut:#6b7285; --pri:#3b5bdb; --bd:#dde1ee; --ok:#2b8a3e; --err:#c92a2a; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12141c; --card:#1b1e2a; --txt:#e8eaf3; --mut:#9aa1b5; --pri:#748ffc; --bd:#2c3042; --ok:#51cf66; --err:#ff6b6b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--txt); }
+  header { padding:20px 24px 0; max-width:1200px; margin:auto; }
+  h1 { margin:0 0 4px; font-size:1.5rem; }
+  header p { margin:0; color:var(--mut); }
+  main { max-width:1200px; margin:auto; padding:20px 24px 40px; display:grid; grid-template-columns:minmax(300px,420px) 1fr; gap:20px; }
+  @media (max-width:860px){ main{ grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--bd); border-radius:12px; padding:16px; margin-bottom:16px; }
+  .card h2 { font-size:1rem; margin:0 0 10px; }
+  .drop { border:2px dashed var(--bd); border-radius:10px; padding:18px; text-align:center; color:var(--mut); cursor:pointer; transition:.15s; }
+  .drop.over, .drop:hover { border-color:var(--pri); color:var(--pri); }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; }
+  label { display:block; font-size:.8rem; color:var(--mut); margin-bottom:3px; }
+  input[type=number], input[type=text], select { width:100%; padding:8px 10px; border:1px solid var(--bd); border-radius:8px; background:var(--bg); color:var(--txt); font-size:.95rem; }
+  input[type=range] { width:100%; }
+  button { background:var(--pri); color:#fff; border:0; border-radius:10px; padding:11px 16px; font-size:1rem; cursor:pointer; width:100%; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  button.sec { background:transparent; color:var(--pri); border:1px solid var(--pri); }
+  .small { font-size:.8rem; color:var(--mut); margin-top:6px; }
+  #fileList { max-height:130px; overflow:auto; font-size:.82rem; margin-top:8px; color:var(--mut); }
+  #imgThumb { max-height:70px; max-width:100%; margin-top:8px; display:none; border:1px solid var(--bd); border-radius:6px; background:repeating-conic-gradient(#ccc 0 25%, #fff 0 50%) 50%/12px 12px; }
+  #stage { position:relative; display:inline-block; line-height:0; max-width:100%; border:1px solid var(--bd); background:#fff; touch-action:none; }
+  #stage canvas { max-width:100%; height:auto; }
+  #overlay { position:absolute; cursor:move; outline:2px dashed var(--pri); outline-offset:0; display:none; user-select:none; -webkit-user-drag:none; }
+  #progWrap { height:10px; background:var(--bd); border-radius:6px; overflow:hidden; margin-top:10px; display:none; }
+  #prog { height:100%; width:0; background:var(--pri); transition:width .1s; }
+  #log { font-family:ui-monospace,monospace; font-size:.8rem; white-space:pre-wrap; max-height:240px; overflow:auto; margin-top:10px; }
+  .ok { color:var(--ok); } .err { color:var(--err); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🖼️ Insertar una imagen en muchos PDFs</h1>
+  <p>Todo se procesa en tu navegador: tus archivos no se suben a ningún servidor. El origen (0,0) es la esquina superior izquierda.</p>
+</header>
+
+<main>
+  <section>
+    <div class="card">
+      <h2>1. PDFs (sin límite de cantidad)</h2>
+      <div class="drop" id="dropPdf">Arrastra aquí tus PDFs o haz clic para elegirlos</div>
+      <input type="file" id="pdfInput" accept="application/pdf,.pdf" multiple hidden>
+      <div id="fileList"></div>
+    </div>
+
+    <div class="card">
+      <h2>2. Imagen a insertar</h2>
+      <div class="drop" id="dropImg">Arrastra la imagen o haz clic (PNG con transparencia recomendado)</div>
+      <input type="file" id="imgInput" accept="image/*" hidden>
+      <img id="imgThumb" alt="">
+    </div>
+
+    <div class="card">
+      <h2>3. Posición y tamaño</h2>
+      <label for="unit">Unidad</label>
+      <select id="unit">
+        <option value="pt">Puntos (1 pt = 1/72 pulgada)</option>
+        <option value="pct">Porcentaje de la página</option>
+      </select>
+      <div class="row">
+        <div><label for="x">X (desde la izquierda)</label><input type="number" id="x" value="50" step="any"></div>
+        <div><label for="y">Y (desde arriba)</label><input type="number" id="y" value="50" step="any"></div>
+        <div><label for="w">Ancho</label><input type="number" id="w" value="120" step="any"></div>
+        <div><label for="h">Alto (0 = automático)</label><input type="number" id="h" value="0" step="any"></div>
+      </div>
+      <div class="row">
+        <div><label for="pages">Páginas</label><input type="text" id="pages" value="todas" placeholder="todas, 1, 1,3,5-7, 2-"></div>
+        <div><label for="op">Opacidad: <span id="opv">100</span>%</label><input type="range" id="op" min="5" max="100" value="100"></div>
+      </div>
+      <p class="small">Puedes arrastrar la imagen sobre la vista previa para posicionarla.</p>
+    </div>
+
+    <button id="run" disabled>🚀 Procesar todos los PDFs y descargar ZIP</button>
+    <div id="progWrap"><div id="prog"></div></div>
+    <div id="log"></div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>Vista previa <span class="small" id="prevInfo"></span></h2>
+      <div id="stage"><canvas id="cv"></canvas><img id="overlay" alt="" draggable="false"></div>
+      <p class="small" id="prevHint">Sube un PDF y la imagen para ver la vista previa (se usa el primer PDF).</p>
+    </div>
+  </section>
+</main>
+
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+const { PDFDocument, degrees } = PDFLib;
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+const $ = id => document.getElementById(id);
+let pdfFiles = [], imgFile = null, imgUrl = null, imgRatio = 1;
+let prevPage = { w: 0, h: 0, ok: false }; // tamaño visible de la página en vista previa (puntos)
+
+/* ---------- Utilidades ---------- */
+function parsePages(spec, total) {
+  spec = (spec || "").trim().toLowerCase();
+  if (["", "todas", "todo", "all", "*"].includes(spec)) return [...Array(total).keys()];
+  const set = new Set();
+  for (let part of spec.split(",")) {
+    part = part.trim(); if (!part) continue;
+    if (part.includes("-")) {
+      let [a, b] = part.split("-");
+      a = a.trim() ? parseInt(a) : 1; b = b.trim() ? parseInt(b) : total;
+      for (let i = a; i <= b; i++) set.add(i);
+    } else set.add(parseInt(part));
+  }
+  return [...set].filter(p => p >= 1 && p <= total).sort((a, b) => a - b).map(p => p - 1);
+}
+
+// Rectángulo visual en puntos (origen arriba-izquierda) para una página de tamaño pw x ph
+function computeRect(pw, ph) {
+  const pct = $("unit").value === "pct";
+  let x = +$("x").value || 0, y = +$("y").value || 0, w = +$("w").value || 0, h = +$("h").value || 0;
+  if (pct) { x = pw * x / 100; w = pw * w / 100; y = ph * y / 100; h = ph * h / 100; }
+  if (w <= 0 && h <= 0) w = pw * 0.2;
+  if (h <= 0) h = w / imgRatio; else if (w <= 0) w = h * imgRatio;
+  return { x, y, w, h };
+}
+
+function refresh() { $("run").disabled = !(pdfFiles.length && imgFile); }
+
+function renderList() {
+  $("fileList").innerHTML = pdfFiles.length
+    ? `<b>${pdfFiles.length} PDF(s) cargado(s)</b><br>` + pdfFiles.map(f => "• " + f.name).join("<br>")
+    : "";
+}
+
+/* ---------- Carga de archivos ---------- */
+function setupDrop(dropEl, inputEl, handler) {
+  dropEl.addEventListener("click", () => inputEl.click());
+  inputEl.addEventListener("change", () => { handler([...inputEl.files]); inputEl.value = ""; });
+  ["dragenter", "dragover"].forEach(e => dropEl.addEventListener(e, ev => { ev.preventDefault(); dropEl.classList.add("over"); }));
+  ["dragleave", "drop"].forEach(e => dropEl.addEventListener(e, ev => { ev.preventDefault(); dropEl.classList.remove("over"); }));
+  dropEl.addEventListener("drop", ev => handler([...ev.dataTransfer.files]));
+}
+
+setupDrop($("dropPdf"), $("pdfInput"), files => {
+  const pdfs = files.filter(f => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"));
+  pdfFiles = pdfFiles.concat(pdfs);
+  renderList(); refresh(); renderPreview();
+});
+
+setupDrop($("dropImg"), $("imgInput"), async files => {
+  const f = files.find(f => f.type.startsWith("image/")); if (!f) return;
+  imgFile = f;
+  if (imgUrl) URL.revokeObjectURL(imgUrl);
+  imgUrl = URL.createObjectURL(f);
+  const im = new Image(); im.src = imgUrl; await im.decode();
+  imgRatio = im.naturalWidth / im.naturalHeight;
+  $("imgThumb").src = imgUrl; $("imgThumb").style.display = "block";
+  $("overlay").src = imgUrl;
+  refresh(); renderPreview();
+});
+
+/* ---------- Vista previa ---------- */
+async function renderPreview() {
+  if (!pdfFiles.length) return;
+  try {
+    const buf = await pdfFiles[0].arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    const idx = parsePages($("pages").value, pdf.numPages)[0] ?? 0;
+    const page = await pdf.getPage(idx + 1);
+    const vp1 = page.getViewport({ scale: 1 });
+    const scale = Math.min(1.6, 720 / vp1.width);
+    const vp = page.getViewport({ scale });
+    const cv = $("cv");
+    cv.width = vp.width; cv.height = vp.height;
+    await page.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise;
+    prevPage = { w: vp1.width, h: vp1.height, ok: true };
+    $("prevInfo").textContent = `— ${pdfFiles[0].name}, pág. ${idx + 1} (${Math.round(vp1.width)}×${Math.round(vp1.height)} pt)`;
+    $("prevHint").style.display = imgFile ? "none" : "";
+    updateOverlay();
+  } catch (e) {
+    $("prevInfo").textContent = "— no se pudo generar la vista previa: " + e.message;
+  }
+}
+
+function updateOverlay() {
+  const ov = $("overlay");
+  if (!prevPage.ok || !imgFile) { ov.style.display = "none"; return; }
+  const r = computeRect(prevPage.w, prevPage.h);
+  ov.style.display = "block";
+  ov.style.left = (r.x / prevPage.w * 100) + "%";
+  ov.style.top = (r.y / prevPage.h * 100) + "%";
+  ov.style.width = (r.w / prevPage.w * 100) + "%";
+  ov.style.height = (r.h / prevPage.h * 100) + "%";
+  ov.style.opacity = $("op").value / 100;
+}
+
+["x", "y", "w", "h", "unit", "op"].forEach(id => $(id).addEventListener("input", () => {
+  $("opv").textContent = $("op").value; updateOverlay();
+}));
+$("pages").addEventListener("change", renderPreview);
+
+// Arrastrar la imagen en la vista previa
+(() => {
+  const ov = $("overlay"), stage = $("stage");
+  let drag = null;
+  ov.addEventListener("pointerdown", e => {
+    const r = computeRect(prevPage.w, prevPage.h);
+    drag = { sx: e.clientX, sy: e.clientY, ox: r.x, oy: r.y };
+    ov.setPointerCapture(e.pointerId); e.preventDefault();
+  });
+  ov.addEventListener("pointermove", e => {
+    if (!drag) return;
+    const box = stage.getBoundingClientRect();
+    const k = prevPage.w / box.width; // puntos por pixel
+    let nx = drag.ox + (e.clientX - drag.sx) * k;
+    let ny = drag.oy + (e.clientY - drag.sy) * k;
+    if ($("unit").value === "pct") { nx = nx / prevPage.w * 100; ny = ny / prevPage.h * 100; }
+    $("x").value = (+nx.toFixed(2)); $("y").value = (+ny.toFixed(2));
+    updateOverlay();
+  });
+  ov.addEventListener("pointerup", () => drag = null);
+})();
+
+/* ---------- Procesamiento ---------- */
+async function imageToPngBytes() {
+  const im = new Image(); im.src = imgUrl; await im.decode();
+  const c = document.createElement("canvas");
+  c.width = im.naturalWidth; c.height = im.naturalHeight;
+  c.getContext("2d").drawImage(im, 0, 0);
+  const blob = await new Promise(res => c.toBlob(res, "image/png"));
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+function logLine(txt, cls) {
+  const d = document.createElement("div"); d.textContent = txt; if (cls) d.className = cls;
+  $("log").appendChild(d); $("log").scrollTop = $("log").scrollHeight;
+}
+
+$("run").addEventListener("click", async () => {
+  $("run").disabled = true; $("log").innerHTML = "";
+  $("progWrap").style.display = "block"; $("prog").style.width = "0%";
+  const opacity = $("op").value / 100;
+  const zip = new JSZip(); const used = new Set(); let ok = 0;
+  try {
+    const pngBytes = await imageToPngBytes();
+    for (let i = 0; i < pdfFiles.length; i++) {
+      const f = pdfFiles[i];
+      try {
+        const doc = await PDFDocument.load(await f.arrayBuffer());
+        const img = await doc.embedPng(pngBytes);
+        const pages = doc.getPages();
+        const idx = parsePages($("pages").value, pages.length);
+        for (const p of idx) {
+          const page = pages[p];
+          const rot = ((page.getRotation().angle % 360) + 360) % 360;
+          const { width: W, height: H } = page.getSize();
+          const vw = rot % 180 ? H : W, vh = rot % 180 ? W : H;
+          const r = computeRect(vw, vh);
+          let x, y;
+          if (rot === 0)        { x = r.x;            y = H - r.y - r.h; }
+          else if (rot === 90)  { x = r.y + r.h;      y = r.x; }
+          else if (rot === 180) { x = W - r.x;        y = r.y + r.h; }
+          else                  { x = W - r.y - r.h;  y = H - r.x; }
+          page.drawImage(img, { x, y, width: r.w, height: r.h, rotate: degrees(rot), opacity });
+        }
+        let name = f.name, n = 1;
+        while (used.has(name)) name = f.name.replace(/\.pdf$/i, "") + ` (${n++}).pdf`;
+        used.add(name);
+        zip.file(name, await doc.save());
+        ok++; logLine(`✅ ${f.name}: imagen añadida en ${idx.length} página(s)`, "ok");
+      } catch (e) {
+        logLine(`❌ ${f.name}: ${e.message}`, "err");
+      }
+      $("prog").style.width = ((i + 1) / pdfFiles.length * 100) + "%";
+      await new Promise(r => setTimeout(r)); // deja respirar a la interfaz
+    }
+    if (ok) {
+      logLine("Generando ZIP…");
+      const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = "pdfs_con_imagen.zip"; a.click();
+      logLine(`Listo: ${ok}/${pdfFiles.length} PDFs procesados.`, "ok");
+    } else logLine("No se pudo procesar ningún PDF.", "err");
+  } catch (e) {
+    logLine("Error: " + e.message, "err");
+  }
+  $("run").disabled = false;
+});
+</script>
+</body>
+</html>
